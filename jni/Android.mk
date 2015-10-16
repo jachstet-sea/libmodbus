@@ -10,5 +10,7 @@ LOCAL_SRC_FILES := \
 	../src/modbus-tcp.c \
 	../src/modbus.c \
 	
+# Prepare config.h and modbus-version.h
+$(shell python $(LOCAL_PATH)/configure.py)
 
 include $(BUILD_SHARED_LIBRARY)
