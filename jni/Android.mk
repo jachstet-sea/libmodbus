@@ -10,7 +10,5 @@ LOCAL_SRC_FILES := \
 	../src/modbus-tcp.c \
 	../src/modbus.c \
 	
-LOCAL_CFLAGS += -DHAVE_BYTESWAP_H=1
-
 
 include $(BUILD_SHARED_LIBRARY)
