@@ -19,6 +19,9 @@
 #include "modbus-callback.h"
 #include "modbus-callback-private.h"
 
+#include <android/log.h>
+#define LOGTAG "libmodbusCALLBACK"
+
 /* Table of CRC values for high-order byte */
 static const uint8_t table_crc_hi[] = {
     0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0,
@@ -162,12 +165,12 @@ static ssize_t _modbus_callback_send(modbus_t *ctx, const uint8_t *req, int req_
 MODBUS_API int modbus_callback_handle_incoming_data(modbus_t *ctx, uint8_t *data, int dataLen)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
-  if (ctx_callback->rxBuf != 0)
+  ctx_callback->rxBuf = realloc(ctx_callback->rxBuf, (size_t)dataLen);
+  if (ctx_callback->rxBuf == NULL)
   {
-    free(ctx_callback->rxBuf);
+    return -1;
   }
-  ctx_callback->rxBuf = malloc(dataLen);
-  memmove(ctx_callback->rxBuf, data, dataLen);
+  memcpy(ctx_callback->rxBuf, data, dataLen);
   ctx_callback->rxBufLen = dataLen;
 
   return dataLen;
@@ -202,9 +205,11 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
+  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_recv !!! Want %d available %d", rsp_length, ctx_callback->rxBufLen);
+
   if (ctx_callback->rxBufLen == 0 || ctx_callback->rxBuf == 0)
   {
-    return 0;
+    return -1;
   }
 
   int len = rsp_length;
@@ -213,7 +218,7 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
     len = ctx_callback->rxBufLen;
   }
 
-  memmove(rsp, ctx_callback->rxBuf, len);
+  memcpy(rsp, ctx_callback->rxBuf, len);
 
   return len;
 }
@@ -273,10 +278,12 @@ static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
             fprintf(stderr, "ERROR CRC received 0x%0X != CRC calculated 0x%0X\n",
                     crc_received, crc_calculated);
         }
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ERROR CRC received 0x%0X != CRC calculated 0x%0X", crc_received, crc_calculated);
 
         if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_PROTOCOL) {
             _modbus_callback_flush(ctx);
         }
+
         errno = EMBBADCRC;
         return -1;
     }
@@ -300,6 +307,9 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
                               struct timeval *tv, int length_to_read)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+
+  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ctx_callback->rxBufLen);
+
   /*
   int msec = tv->tv_sec*1000 + tv->tv_usec/1000;
   int ret = ctx_callback->callback_select(msec);
@@ -362,7 +372,7 @@ const modbus_backend_t _modbus_callback_backend = {
 };
 
 // NOTE: select() not currently used
-modbus_t*modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint8_t *req, int req_length),
+modbus_t *modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint8_t *req, int req_length),
                              int (*callback_select)(modbus_t *ctx, int msec),
                              int (*callback_open)(modbus_t *ctx),
                              void (*callback_close)(modbus_t *ctx),

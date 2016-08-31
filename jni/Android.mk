@@ -4,6 +4,8 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := modbus
 
+LOCAL_LDLIBS := -llog
+
 LOCAL_SRC_FILES := \
 	../src/modbus-data.c \
 	../src/modbus-callback.c \
