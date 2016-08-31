@@ -165,13 +165,9 @@ static ssize_t _modbus_callback_send(modbus_t *ctx, const uint8_t *req, int req_
 MODBUS_API int modbus_callback_handle_incoming_data(modbus_t *ctx, uint8_t *data, int dataLen)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
-  ctx_callback->rxBuf = realloc(ctx_callback->rxBuf, (size_t)dataLen);
-  if (ctx_callback->rxBuf == NULL)
-  {
-    return -1;
-  }
-  memcpy(ctx_callback->rxBuf, data, dataLen);
-  ctx_callback->rxBufLen = dataLen;
+
+  ringbuf_reset(ctx_callback->rxBuf);
+  ringbuf_memcpy_into(ctx_callback->rxBuf, data, dataLen);
 
   return dataLen;
 }
@@ -205,20 +201,20 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
-  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_recv !!! Want %d available %d", rsp_length, ctx_callback->rxBufLen);
+  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_recv !!! Want %d available %d", rsp_length, ringbuf_bytes_used(ctx_callback->rxBuf));
 
-  if (ctx_callback->rxBufLen == 0 || ctx_callback->rxBuf == 0)
+  if (ringbuf_bytes_used(ctx_callback->rxBuf) == 0)
   {
     return -1;
   }
 
   int len = rsp_length;
-  if (ctx_callback->rxBufLen < len)
+  if (ringbuf_bytes_used(ctx_callback->rxBuf) < len)
   {
-    len = ctx_callback->rxBufLen;
+    len = ringbuf_bytes_used(ctx_callback->rxBuf);
   }
 
-  memcpy(rsp, ctx_callback->rxBuf, len);
+  ringbuf_memcpy_from(rsp, ctx_callback->rxBuf, len);
 
   return len;
 }
@@ -308,7 +304,7 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
-  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ctx_callback->rxBufLen);
+  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ringbuf_bytes_used(ctx_callback->rxBuf));
 
   /*
   int msec = tv->tv_sec*1000 + tv->tv_usec/1000;
@@ -330,10 +326,10 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
 
   errno = ETIMEDOUT;
   int ret = -1;
-  if (ctx_callback->rxBuf != 0 && ctx_callback->rxBufLen != 0)
+  if (ringbuf_bytes_used(ctx_callback->rxBuf) != 0)
   {
     errno = 0;
-    ret = ctx_callback->rxBufLen;
+    ret = ringbuf_bytes_used(ctx_callback->rxBuf);
   }
 
   return ret;
@@ -341,10 +337,7 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
 
 static void _modbus_callback_free(modbus_t *ctx) {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
-  if (ctx_callback->rxBuf != 0)
-  {
-    free(ctx_callback->rxBuf);
-  }
+  ringbuf_free(&ctx_callback->rxBuf);
   free(ctx->backend_data);
   free(ctx);
 }
@@ -390,8 +383,7 @@ modbus_t *modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint
 
     ctx_callback->confirmation_to_ignore = FALSE;
 
-    ctx_callback->rxBufLen = 0;
-    ctx_callback->rxBuf = 0;
+    ctx_callback->rxBuf = ringbuf_new(65535);
 
     ctx_callback->callback_send = callback_send;
     ctx_callback->callback_select = callback_select;

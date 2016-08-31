@@ -9,6 +9,8 @@
 
 #include "stdint.h"
 
+#include "ringbuf.h"
+
 #define _MODBUS_CALLBACK_HEADER_LENGTH      1
 #define _MODBUS_CALLBACK_PRESET_REQ_LENGTH  6
 #define _MODBUS_CALLBACK_PRESET_RSP_LENGTH  2
@@ -26,9 +28,7 @@ typedef struct _modbus_callback {
     /* To handle many slaves on the same link */
     int confirmation_to_ignore;
 
-    // Length of data available
-    int rxBufLen;
-    uint8_t* rxBuf;
+    ringbuf_t rxBuf;
 } modbus_callback_t;
 
 #endif /* MODBUS_CALLBACK_PRIVATE_H */
