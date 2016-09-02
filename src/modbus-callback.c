@@ -19,7 +19,9 @@
 #include "modbus-callback.h"
 #include "modbus-callback-private.h"
 
-#include <android/log.h>
+#ifdef ANDROID
+  #include <android/log.h>
+#endif
 #define LOGTAG "libmodbusCALLBACK"
 
 /* Table of CRC values for high-order byte */
@@ -170,7 +172,7 @@ MODBUS_API int modbus_callback_handle_incoming_data(modbus_t *ctx, uint8_t *data
   // requests issued by us. Therefore, we can safely clear the RX buffer on new,
   // incoming data
   ringbuf_reset(ctx_callback->rxBuf);
-  
+
   ringbuf_memcpy_into(ctx_callback->rxBuf, data, dataLen);
 
   return dataLen;
@@ -205,7 +207,12 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
-  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_recv !!! Want %d available %d", rsp_length, ringbuf_bytes_used(ctx_callback->rxBuf));
+#ifdef ANDROID
+  if (ctx->debug)
+  {
+    __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_recv !!! Want %d available %d", rsp_length, ringbuf_bytes_used(ctx_callback->rxBuf));
+  }
+#endif
 
   if (ringbuf_bytes_used(ctx_callback->rxBuf) == 0)
   {
@@ -278,7 +285,6 @@ static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
             fprintf(stderr, "ERROR CRC received 0x%0X != CRC calculated 0x%0X\n",
                     crc_received, crc_calculated);
         }
-        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ERROR CRC received 0x%0X != CRC calculated 0x%0X", crc_received, crc_calculated);
 
         if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_PROTOCOL) {
             _modbus_callback_flush(ctx);
@@ -308,7 +314,12 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
-  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ringbuf_bytes_used(ctx_callback->rxBuf));
+#ifdef ANDROID
+  if (ctx->debug)
+  {
+    __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ringbuf_bytes_used(ctx_callback->rxBuf));
+  }
+#endif
 
   long usec = tv->tv_sec*1000000 + tv->tv_usec;
 
@@ -318,7 +329,12 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
   long i;
   for (i = usec; i > 0; i -= 10000)
   {
-    __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "POLL _modbus_callback_select POLL !!! Available: %d", ringbuf_bytes_used(ctx_callback->rxBuf));
+#ifdef ANDROID
+    if (ctx->debug)
+    {
+      __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "POLL _modbus_callback_select POLL !!! Available: %d", ringbuf_bytes_used(ctx_callback->rxBuf));
+    }
+#endif
     if (ringbuf_bytes_used(ctx_callback->rxBuf) != 0)
     {
       errno = 0;
@@ -327,7 +343,12 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
     usleep(10000);
   }
 
-  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "_modbus_callback_select !!! TIMEOUT !!!");
+#ifdef ANDROID
+  if (ctx->debug)
+  {
+    __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "_modbus_callback_select !!! TIMEOUT !!!");
+  }
+#endif
   return ret;
 }
 
