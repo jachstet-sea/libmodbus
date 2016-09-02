@@ -166,7 +166,11 @@ MODBUS_API int modbus_callback_handle_incoming_data(modbus_t *ctx, uint8_t *data
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
 
+  // Assuming we are the only master on the bus, all incoming data are responses to
+  // requests issued by us. Therefore, we can safely clear the RX buffer on new,
+  // incoming data
   ringbuf_reset(ctx_callback->rxBuf);
+  
   ringbuf_memcpy_into(ctx_callback->rxBuf, data, dataLen);
 
   return dataLen;
@@ -306,32 +310,24 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
 
   __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ENTER _modbus_callback_select !!! Want: %d Available: %d", length_to_read, ringbuf_bytes_used(ctx_callback->rxBuf));
 
-  /*
-  int msec = tv->tv_sec*1000 + tv->tv_usec/1000;
-  int ret = ctx_callback->callback_select(msec);
-
-  errno = 0;
-  if (ret == -1)
-  {
-    errno = ETIMEDOUT;
-  }
-  */
-
-  // This is extremely hacky: Wait for the timeout and check afterwards if data
-  // had been recieved in the meantime. If so, use it, otherwise, return timeout
-  // Sadly, we cannot ask the JS level for the timeout since that works asynchronously
-  // and we cannot jump back in here. Correct solution: threads!
   long usec = tv->tv_sec*1000000 + tv->tv_usec;
-  usleep(usec);
 
   errno = ETIMEDOUT;
   int ret = -1;
-  if (ringbuf_bytes_used(ctx_callback->rxBuf) != 0)
+
+  long i;
+  for (i = usec; i > 0; i -= 10000)
   {
-    errno = 0;
-    ret = ringbuf_bytes_used(ctx_callback->rxBuf);
+    __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "POLL _modbus_callback_select POLL !!! Available: %d", ringbuf_bytes_used(ctx_callback->rxBuf));
+    if (ringbuf_bytes_used(ctx_callback->rxBuf) != 0)
+    {
+      errno = 0;
+      return ringbuf_bytes_used(ctx_callback->rxBuf);
+    }
+    usleep(10000);
   }
 
+  __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "_modbus_callback_select !!! TIMEOUT !!!");
   return ret;
 }
 
