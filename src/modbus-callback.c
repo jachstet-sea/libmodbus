@@ -19,8 +19,8 @@
 #include "modbus-callback.h"
 #include "modbus-callback-private.h"
 
-#ifdef ANDROID
-  #include <android/log.h>
+#ifdef LOGTAG
+#undef LOGTAG
 #endif
 #define LOGTAG "libmodbusCALLBACK"
 

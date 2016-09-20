@@ -7,6 +7,11 @@
 #ifndef MODBUS_H
 #define MODBUS_H
 
+#ifdef ANDROID
+  #include <android/log.h>
+#endif
+#define LOGTAG "libmodbus"
+
 /* Add this for macros that defined unix flavor */
 #if (defined(__unix__) || defined(unix)) && !defined(USG)
 #include <sys/param.h>

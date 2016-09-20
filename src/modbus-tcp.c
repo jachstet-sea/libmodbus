@@ -190,6 +190,9 @@ static int _modbus_tcp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
         if (ctx->debug) {
             fprintf(stderr, "Invalid transaction ID received 0x%X (not 0x%X)\n",
                     (rsp[0] << 8) + rsp[1], (req[0] << 8) + req[1]);
+            #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "Invalid transaction ID received 0x%X (not 0x%X)", (rsp[0] << 8) + rsp[1], (req[0] << 8) + req[1]);
+            #endif
         }
         errno = EMBBADDATA;
         return -1;
@@ -200,6 +203,9 @@ static int _modbus_tcp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
         if (ctx->debug) {
             fprintf(stderr, "Invalid protocol ID received 0x%X (not 0x0)\n",
                     (rsp[2] << 8) + rsp[3]);
+            #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "Invalid protocol ID received 0x%X (not 0x0)", (rsp[2] << 8) + rsp[3]);
+            #endif
         }
         errno = EMBBADDATA;
         return -1;

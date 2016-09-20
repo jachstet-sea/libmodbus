@@ -81,12 +81,16 @@ const char *modbus_strerror(int errnum) {
 void _error_print(modbus_t *ctx, const char *context)
 {
     if (ctx->debug) {
+#ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "ERROR %s", modbus_strerror(errno));
+#else
         fprintf(stderr, "ERROR %s", modbus_strerror(errno));
         if (context != NULL) {
             fprintf(stderr, ": %s\n", context);
         } else {
             fprintf(stderr, "\n");
         }
+#endif
     }
 }
 
@@ -423,14 +427,14 @@ int _modbus_receive_raw_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
 
         /* Sums bytes received */
         msg_length += rc;
-        
+
         if(step == _STEP_FUNCTION){
             /* Read one byte */
             length_to_read = 1;
             /* Data step */
             step = _STEP_DATA;
         }
-        
+
         /* On Linux, select() modifies timeout to reflect the amount of time not slept.
          * http://linux.die.net/man/2/select
          * Set byte timeout */
@@ -546,7 +550,13 @@ int _modbus_receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
         if (ctx->debug) {
             int i;
             for (i=0; i < rc; i++)
+            {
+              #ifdef ANDROID
+                __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "DATA <%.2X>", msg[msg_length + i]);
+              #else
                 printf("<%.2X>", msg[msg_length + i]);
+              #endif
+            }
         }
 
         /* Sums bytes received */
@@ -654,8 +664,21 @@ static int check_confirmation(modbus_t *ctx, uint8_t *req,
     const int offset = ctx->backend->header_length;
     const int function = rsp[offset];
 
+    if (ctx->debug)
+    {
+        #ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "check_confirmation");
+        #endif
+    }
+
     if (ctx->backend->pre_check_confirmation) {
         rc = ctx->backend->pre_check_confirmation(ctx, req, rsp, rsp_length);
+        if (ctx->debug)
+        {
+            #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "backend->pre_check_confirmation returned %d", rc);
+            #endif
+        }
         if (rc == -1) {
             if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_PROTOCOL) {
                 _sleep_response_timeout(ctx);
@@ -666,6 +689,13 @@ static int check_confirmation(modbus_t *ctx, uint8_t *req,
     }
 
     rsp_length_computed = compute_response_length_from_request(ctx, req);
+
+    if (ctx->debug)
+    {
+        #ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "check_confirmation rsp_length: %d rsp_length_computed: %d", rsp_length, rsp_length_computed);
+        #endif
+    }
 
     /* Exception code */
     if (function >= 0x80) {
@@ -1295,16 +1325,47 @@ static int read_registers(modbus_t *ctx, int function, int addr, int nb,
 
     req_length = ctx->backend->build_request_basis(ctx, function, addr, nb, req);
 
+    /* Display the hex code of each character to be sent */
+    if (ctx->debug) {
+        int i;
+        #ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "REQUEST START");
+        #endif
+        for (i=0; i < req_length; i++)
+        {
+          #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "DATA <%.2X>", req[i]);
+          #else
+            printf("<%.2X>", req[req_length + i]);
+          #endif
+        }
+        #ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "REQUEST END");
+        #endif
+    }
+
     rc = send_msg(ctx, req, req_length);
     if (rc > 0) {
         int offset;
         int i;
 
         rc = _modbus_receive_msg(ctx, rsp, MSG_CONFIRMATION);
+        if (ctx->debug)
+        {
+            #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "_modbus_receive_msg returned: %d", rc);
+            #endif
+        }
         if (rc == -1)
             return -1;
 
         rc = check_confirmation(ctx, req, rsp, rc);
+        if (ctx->debug)
+        {
+            #ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "check_confirmation returned: %d", rc);
+            #endif
+        }
         if (rc == -1)
             return -1;
 
