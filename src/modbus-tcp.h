@@ -47,6 +47,8 @@ MODBUS_API modbus_t* modbus_new_tcp_pi(const char *node, const char *service);
 MODBUS_API int modbus_tcp_pi_listen(modbus_t *ctx, int nb_connection);
 MODBUS_API int modbus_tcp_pi_accept(modbus_t *ctx, int *s);
 
+MODBUS_API int modbus_set_ignore_t_id(modbus_t *ctx, int flag);
+
 MODBUS_END_DECLS
 
 #endif /* MODBUS_TCP_H */

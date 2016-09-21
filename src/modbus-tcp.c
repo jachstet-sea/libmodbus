@@ -186,7 +186,8 @@ static int _modbus_tcp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
                                               const uint8_t *rsp, int rsp_length)
 {
     /* Check transaction ID */
-    if (req[0] != rsp[0] || req[1] != rsp[1]) {
+    modbus_tcp_t *ctx_tcp = ctx->backend_data;
+    if ((req[0] != rsp[0] || req[1] != rsp[1]) && !ctx_tcp->ignore_t_id) {
         if (ctx->debug) {
             fprintf(stderr, "Invalid transaction ID received 0x%X (not 0x%X)\n",
                     (rsp[0] << 8) + rsp[1], (req[0] << 8) + req[1]);
@@ -211,6 +212,22 @@ static int _modbus_tcp_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
         return -1;
     }
 
+    return 0;
+}
+
+int modbus_set_ignore_t_id(modbus_t *ctx, int flag)
+{
+    if (ctx == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    modbus_tcp_t *ctx_tcp = ctx->backend_data;
+    if (ctx_tcp == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    ctx_tcp->ignore_t_id = flag;
     return 0;
 }
 
@@ -835,6 +852,8 @@ modbus_t* modbus_new_tcp(const char *ip, int port)
     }
     ctx_tcp->port = port;
     ctx_tcp->t_id = 0;
+
+    ctx_tcp->ignore_t_id = 0;
 
     return ctx;
 }

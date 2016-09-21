@@ -25,6 +25,7 @@ typedef struct _modbus_tcp {
     int port;
     /* IP address */
     char ip[16];
+    int ignore_t_id;
 } modbus_tcp_t;
 
 #define _MODBUS_TCP_PI_NODE_LENGTH    1025
