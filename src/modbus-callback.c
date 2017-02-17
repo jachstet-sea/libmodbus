@@ -126,6 +126,7 @@ static int _modbus_callback_build_response_basis(sft_t *sft, uint8_t *rsp)
     return _MODBUS_CALLBACK_PRESET_RSP_LENGTH;
 }
 
+/* Calculates the CRC16 checksum of a provided buffer */
 static uint16_t crc16(uint8_t *buffer, uint16_t buffer_length)
 {
     uint8_t crc_hi = 0xFF; /* high CRC byte initialized */
@@ -142,6 +143,7 @@ static uint16_t crc16(uint8_t *buffer, uint16_t buffer_length)
     return (crc_hi << 8 | crc_lo);
 }
 
+/* Prepare a transaction id for a response for backends that need it */
 static int _modbus_callback_prepare_response_tid(const uint8_t *req, int *req_length)
 {
     (*req_length) -= _MODBUS_CALLBACK_CHECKSUM_LENGTH;
@@ -149,6 +151,7 @@ static int _modbus_callback_prepare_response_tid(const uint8_t *req, int *req_le
     return 0;
 }
 
+/* Do the final preparations (checksum) before a message is sent */
 static int _modbus_callback_send_msg_pre(uint8_t *req, int req_length)
 {
     uint16_t crc = crc16(req, req_length);
@@ -158,31 +161,50 @@ static int _modbus_callback_send_msg_pre(uint8_t *req, int req_length)
     return req_length;
 }
 
+/* Called by modbus.c when it wants us to transmit a buffer "to the wire"
+ * which in our case it means handing it over to the provided callback
+ * function */
 static ssize_t _modbus_callback_send(modbus_t *ctx, const uint8_t *req, int req_length)
 {
     modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+    if ((ctx_callback == NULL) || (ctx_callback->callback_send == NULL)) {
+      errno = EINVAL;
+      return (ssize_t)-1;
+    }
     return ctx_callback->callback_send(ctx, req, req_length);
 }
 
+/* Called by the backend user when it has received data "from the wire" which
+ * we will store into our ring buffer so mobus.c can receive it via the select
+ * and recv methods while waiting for a response */
 MODBUS_API int modbus_callback_handle_incoming_data(modbus_t *ctx, uint8_t *data, int dataLen)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+  if ((ctx_callback == NULL) || (ctx_callback->rxBuf == NULL)) {
+    errno = EINVAL;
+    return -1;
+  }
 
-  // Assuming we are the only master on the bus, all incoming data are responses to
-  // requests issued by us. Therefore, we can safely clear the RX buffer on new,
-  // incoming data
+  // Assuming we are the only master on the bus, all incoming data are
+  // responses to requests issued by us. Therefore, we can safely clear the
+  // RX buffer on new, incoming data
   ringbuf_reset(ctx_callback->rxBuf);
 
-  ringbuf_memcpy_into(ctx_callback->rxBuf, data, dataLen);
+  ringbuf_memcpy_into(ctx_callback->rxBuf, data, (size_t)dataLen);
 
   return dataLen;
 }
 
-// Looks like code only needed when we are slave talking to a master
+/* Looks like code only needed when we are slave talking to a master?
+ * => UNTESTED since we needed only the case when we are the master */
 static int _modbus_callback_receive(modbus_t *ctx, uint8_t *req)
 {
     int rc;
     modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+    if (ctx_callback == NULL) {
+      errno = EINVAL;
+      return -1;
+    }
 
     if (ctx_callback->confirmation_to_ignore) {
         _modbus_receive_msg(ctx, req, MSG_CONFIRMATION);
@@ -202,10 +224,15 @@ static int _modbus_callback_receive(modbus_t *ctx, uint8_t *req)
     return rc;
 }
 
-// Called by modbus.c if it knows that there is data available and how much of it
+/* Called by modbus.c if it knows that there is data available, how much of
+ * it and it wants to have the content now */
 static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+  if ((ctx_callback == NULL) || (ctx_callback->rxBuf == NULL)) {
+    errno = EINVAL;
+    return (ssize_t)-1;
+  }
 
 #ifdef ANDROID
   if (ctx->debug)
@@ -216,10 +243,10 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
 
   if (ringbuf_bytes_used(ctx_callback->rxBuf) == 0)
   {
-    return -1;
+    return (ssize_t)-1;
   }
 
-  int len = rsp_length;
+  size_t len = (size_t)rsp_length;
   if (ringbuf_bytes_used(ctx_callback->rxBuf) < len)
   {
     len = ringbuf_bytes_used(ctx_callback->rxBuf);
@@ -227,21 +254,27 @@ static ssize_t _modbus_callback_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length
 
   ringbuf_memcpy_from(rsp, ctx_callback->rxBuf, len);
 
-  return len;
+  return (ssize_t)len;
 }
 
+/* This backend's implementation of flush is to simply call the backend's
+ * user's flush method */
 static int _modbus_callback_flush(modbus_t *ctx)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+  if ((ctx_callback == NULL) || (ctx_callback->callback_flush == NULL)) {
+    errno = EINVAL;
+    return -1;
+  }
   return ctx_callback->callback_flush(ctx);
 }
 
+/* Check responding slave is the slave we requested (except for broacast
+ * request) */
 static int _modbus_callback_pre_check_confirmation(modbus_t *ctx, const uint8_t *req,
                                               const uint8_t *rsp, int rsp_length)
 {
-    /* Check responding slave is the slave we requested (except for broacast
-     * request) */
-    if (req[0] != rsp[0] && req[0] != MODBUS_BROADCAST_ADDRESS) {
+    if ((req[0] != rsp[0]) && (req[0] != MODBUS_BROADCAST_ADDRESS)) {
         if (ctx->debug) {
             fprintf(stderr,
                     "The responding slave %d isn't the requested slave %d\n",
@@ -256,7 +289,7 @@ static int _modbus_callback_pre_check_confirmation(modbus_t *ctx, const uint8_t 
 
 /* The check_crc16 function shall return 0 is the message is ignored and the
    message length if the CRC is valid. Otherwise it shall return -1 and set
-   errno to EMBADCRC. */
+   errno to EMBBADCRC. */
 static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
                                        const int msg_length)
 {
@@ -266,7 +299,7 @@ static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
 
     /* Filter on the Modbus unit identifier (slave) in callback mode to avoid useless
      * CRC computing. */
-    if (slave != ctx->slave && slave != MODBUS_BROADCAST_ADDRESS) {
+    if ((slave != ctx->slave) && (slave != MODBUS_BROADCAST_ADDRESS)) {
         if (ctx->debug) {
             printf("Request for slave %d ignored (not %d)\n", slave, ctx->slave);
         }
@@ -295,24 +328,41 @@ static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
     }
 }
 
-/* Sets up a serial port for callback communications */
+/* Initiate a connection. We simply call the open-callback of the backend user
+ * so they can do their stuff to open a connection */
 static int _modbus_callback_connect(modbus_t *ctx)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+  if ((ctx_callback == NULL) || (ctx_callback->callback_open == NULL)) {
+    errno = EINVAL;
+    return -1;
+  }
   return ctx_callback->callback_open(ctx);
 }
 
+/* Close a connection. We simply call the close-callback of the backend user
+ *  so they can do their stuff to close the connection */
 static void _modbus_callback_close(modbus_t *ctx)
 {
     modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+    if ((ctx_callback == NULL) || (ctx_callback->callback_close == NULL)) {
+      errno = EINVAL;
+      return;
+    }
     ctx_callback->callback_close(ctx);
 }
 
-
+/* Called by modbus.c if it wants know if and how many data available
+ * (= has been received) and is waiting to be parsed. The data is NOT
+ * actually read from the ringbuffer here */
 static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
                               struct timeval *tv, int length_to_read)
 {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
+  if ((ctx_callback == NULL) || (ctx_callback->rxBuf == NULL)) {
+    errno = EINVAL;
+    return -1;
+  }
 
 #ifdef ANDROID
   if (ctx->debug)
@@ -338,7 +388,7 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
     if (ringbuf_bytes_used(ctx_callback->rxBuf) != 0)
     {
       errno = 0;
-      return ringbuf_bytes_used(ctx_callback->rxBuf);
+      return (int)ringbuf_bytes_used(ctx_callback->rxBuf);
     }
     usleep(10000);
   }
@@ -352,9 +402,12 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
   return ret;
 }
 
+/* Free all ressources allocated by this backend */
 static void _modbus_callback_free(modbus_t *ctx) {
   modbus_callback_t *ctx_callback = (modbus_callback_t*)ctx->backend_data;
-  ringbuf_free(&ctx_callback->rxBuf);
+  if ((ctx_callback != NULL) && (ctx_callback->rxBuf != NULL)) {
+    ringbuf_free(&ctx_callback->rxBuf);
+  }
   free(ctx->backend_data);
   free(ctx);
 }
@@ -381,7 +434,7 @@ const modbus_backend_t _modbus_callback_backend = {
     _modbus_callback_free
 };
 
-// NOTE: select() not currently used
+/* Initialize the callback backend, setting all callback functions */
 modbus_t *modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint8_t *req, int req_length),
                              int (*callback_select)(modbus_t *ctx, int msec),
                              int (*callback_open)(modbus_t *ctx),
@@ -393,14 +446,34 @@ modbus_t *modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint
     modbus_callback_t *ctx_callback;
 
     ctx = (modbus_t *)malloc(sizeof(modbus_t));
+    if (ctx == NULL)
+    {
+      return NULL;
+    }
     _modbus_init_common(ctx);
     ctx->backend = &_modbus_callback_backend;
     ctx->backend_data = (modbus_callback_t *)malloc(sizeof(modbus_callback_t));
+    if (ctx->backend_data == NULL)
+    {
+      free(ctx);
+      return NULL;
+    }
     ctx_callback = (modbus_callback_t *)ctx->backend_data;
 
     ctx_callback->confirmation_to_ignore = FALSE;
 
-    ctx_callback->rxBuf = ringbuf_new(65535);
+    ctx_callback->rxBuf = ringbuf_new((size_t)65535);
+    if (ctx_callback->rxBuf == NULL)
+    {
+      free(ctx->backend_data);
+      free(ctx);
+      return NULL;
+    }
+
+    // We could check here if one of the provided callbacks is NULL.
+    // However, if the backend-using code will never call flush(), there is
+    // no need to provide it. Thus, we check for NULL before calling
+    // a callback function provided here
 
     ctx_callback->callback_send = callback_send;
     ctx_callback->callback_select = callback_select;

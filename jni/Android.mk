@@ -6,6 +6,8 @@ LOCAL_MODULE := modbus
 
 LOCAL_LDLIBS := -llog
 
+LOCAL_CFLAGS += -Wall
+
 LOCAL_SRC_FILES := \
 	../src/ringbuf.c \
 	../src/modbus-data.c \
