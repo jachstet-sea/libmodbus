@@ -378,10 +378,6 @@ int _modbus_receive_raw_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
     while (rc != -1) {
         rc = ctx->backend->select(ctx, &rset, p_tv, length_to_read);
         if (rc == -1) {
-            /* Timeout at end of msg */
-            if(step == _STEP_DATA && errno == ETIMEDOUT){
-                break;
-            }
             _error_print(ctx, "select");
             if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_LINK) {
                 int saved_errno = errno;
@@ -421,16 +417,25 @@ int _modbus_receive_raw_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
         /* Display the hex code of each character received */
         if (ctx->debug) {
             int i;
-            for (i=0; i < rc; i++)
+            for (i=0; i < rc; i++) {
                 printf("<%.2X>", msg[msg_length + i]);
+            }
         }
 
         /* Sums bytes received */
         msg_length += rc;
 
-        if(step == _STEP_FUNCTION){
-            /* Read one byte */
-            length_to_read = 1;
+        /* We assume that we have everything we want to read after the
+         * first read in _STEP_DATA */
+        if (step == _STEP_DATA) {
+          break;
+        }
+
+        if (step == _STEP_FUNCTION){
+            /* Wait a bit for the complete packet to arrive, then
+             * read all there is to be read (up to one complete ADU) */
+            usleep(4000);
+            length_to_read = MODBUS_MAX_ADU_LENGTH;
             /* Data step */
             step = _STEP_DATA;
         }
