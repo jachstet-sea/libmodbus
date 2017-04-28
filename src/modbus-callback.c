@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: LGPL-2.1+
  */
 
-#include <stdio.h>
+#ifndef ANDROID
+  #include <stdio.h>
+#endif
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -105,12 +107,12 @@ static int _modbus_callback_build_request_basis(modbus_t *ctx, int function,
                                                 uint8_t *req)
 {
     assert(ctx->slave != -1);
-    req[0] = ctx->slave;
-    req[1] = function;
-    req[2] = addr >> 8;
-    req[3] = addr & 0x00ff;
-    req[4] = nb >> 8;
-    req[5] = nb & 0x00ff;
+    req[0] = (uint8_t)(ctx->slave);
+    req[1] = (uint8_t)(function);
+    req[2] = (uint8_t)((uint16_t)addr >> 8);
+    req[3] = (uint8_t)((uint16_t)addr & (uint16_t)0x00ff);
+    req[4] = (uint8_t)((uint16_t)nb >> 8);
+    req[5] = (uint8_t)((uint16_t)nb & (uint16_t)0x00ff);
 
     return _MODBUS_CALLBACK_PRESET_REQ_LENGTH;
 }
@@ -129,18 +131,18 @@ static int _modbus_callback_build_response_basis(sft_t *sft, uint8_t *rsp)
 /* Calculates the CRC16 checksum of a provided buffer */
 static uint16_t crc16(uint8_t *buffer, uint16_t buffer_length)
 {
-    uint8_t crc_hi = 0xFF; /* high CRC byte initialized */
-    uint8_t crc_lo = 0xFF; /* low CRC byte initialized */
-    unsigned int i; /* will index into CRC lookup */
+    uint8_t crc_hi = (uint8_t)0xFF; /* high CRC byte initialized */
+    uint8_t crc_lo = (uint8_t)0xFF; /* low CRC byte initialized */
+    uint8_t i; /* will index into CRC lookup */
 
     /* pass through message buffer */
     while (buffer_length--) {
-        i = crc_hi ^ *buffer++; /* calculate the CRC  */
+        i = (uint8_t)((uint8_t)crc_hi ^ (uint8_t)(*buffer++)); /* calculate the CRC  */
         crc_hi = crc_lo ^ table_crc_hi[i];
         crc_lo = table_crc_lo[i];
     }
 
-    return (crc_hi << 8 | crc_lo);
+    return ( (uint16_t)(((uint16_t)crc_hi) << 8) | (uint16_t)crc_lo);
 }
 
 /* Prepare a transaction id for a response for backends that need it */
@@ -154,9 +156,9 @@ static int _modbus_callback_prepare_response_tid(const uint8_t *req, int *req_le
 /* Do the final preparations (checksum) before a message is sent */
 static int _modbus_callback_send_msg_pre(uint8_t *req, int req_length)
 {
-    uint16_t crc = crc16(req, req_length);
-    req[req_length++] = crc >> 8;
-    req[req_length++] = crc & 0x00FF;
+    uint16_t crc = crc16(req, (uint16_t)req_length);
+    req[req_length++] = (uint8_t)((uint16_t)crc >> 8);
+    req[req_length++] = (uint8_t)((uint16_t)crc & (uint16_t)0x00FF);
 
     return req_length;
 }
@@ -212,7 +214,11 @@ static int _modbus_callback_receive(modbus_t *ctx, uint8_t *req)
         ctx_callback->confirmation_to_ignore = FALSE;
         rc = 0;
         if (ctx->debug) {
+#ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "Confirmation to ignore\n");
+#else
             printf("Confirmation to ignore\n");
+#endif
         }
     } else {
         rc = _modbus_receive_msg(ctx, req, MSG_INDICATION);
@@ -276,9 +282,11 @@ static int _modbus_callback_pre_check_confirmation(modbus_t *ctx, const uint8_t 
 {
     if ((req[0] != rsp[0]) && (req[0] != MODBUS_BROADCAST_ADDRESS)) {
         if (ctx->debug) {
+#ifndef ANDROID
             fprintf(stderr,
                     "The responding slave %d isn't the requested slave %d\n",
                     rsp[0], req[0]);
+#endif
         }
         errno = EMBBADSLAVE;
         return -1;
@@ -295,28 +303,40 @@ static int _modbus_callback_check_integrity(modbus_t *ctx, uint8_t *msg,
 {
     uint16_t crc_calculated;
     uint16_t crc_received;
-    int slave = msg[0];
+    int slave = (int)msg[0];
 
     /* Filter on the Modbus unit identifier (slave) in callback mode to avoid useless
      * CRC computing. */
     if ((slave != ctx->slave) && (slave != MODBUS_BROADCAST_ADDRESS)) {
         if (ctx->debug) {
+#ifdef ANDROID
+            __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "Request for slave %d ignored (not %d)\n", slave, ctx->slave);
+#else
             printf("Request for slave %d ignored (not %d)\n", slave, ctx->slave);
+#endif
+
         }
         /* Following call to check_confirmation handles this error */
         return 0;
     }
 
-    crc_calculated = crc16(msg, msg_length - 2);
-    crc_received = (msg[msg_length - 2] << 8) | msg[msg_length - 1];
+    if (msg_length < 3) {
+      errno = EMBBADCRC;
+      return -1;
+    }
+
+    crc_calculated = crc16(msg, (uint16_t)((uint16_t)msg_length - (uint16_t)2));
+    crc_received = (uint16_t)(((uint16_t)msg[msg_length - 2]) << 8) | (uint16_t)(msg[msg_length - 1]);
 
     /* Check CRC of msg */
     if (crc_calculated == crc_received) {
         return msg_length;
     } else {
         if (ctx->debug) {
+#ifndef ANDROID
             fprintf(stderr, "ERROR CRC received 0x%0X != CRC calculated 0x%0X\n",
                     crc_received, crc_calculated);
+#endif
         }
 
         if (ctx->error_recovery & MODBUS_ERROR_RECOVERY_PROTOCOL) {
@@ -390,7 +410,7 @@ static int _modbus_callback_select(modbus_t *ctx, fd_set *rset,
       errno = 0;
       return (int)ringbuf_bytes_used(ctx_callback->rxBuf);
     }
-    usleep(10000);
+    usleep((unsigned long)10000);
   }
 
 #ifdef ANDROID
