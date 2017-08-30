@@ -24,8 +24,8 @@ libmodbus_la_SOURCES = \
         modbus-tcp.h \
         modbus-tcp-private.h \
         modbus-version.h \
-	ringbuf.c \
-	ringbuf.h
+        ringbuf.c \
+        ringbuf.h
 
 libmodbus_la_LDFLAGS = -no-undefined \
         -version-info $(LIBMODBUS_LT_VERSION_INFO)

@@ -128,14 +128,12 @@ int main(int argc, char *argv[])
     memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
 
 
-    printf("\nTEST DEVICE IDENTIFICATION \n");
+    printf("\n TEST DEVICE IDENTIFICATION \n");
 
-    ctx->slave = 0xf8;
-    uint8_t raw_req[] = {ctx->slave,MODBUS_FC_READ_DEVICE_ID,0x0E, 0x03, 0x00};
-    uint8_t rsp[MODBUS_TCP_MAX_ADU_LENGTH];
-    rc = modbus_send_raw_request(ctx,raw_req, 5 * sizeof(uint8_t));
-    modbus_receive_confirmation(ctx,rsp);
-    ASSERT_TRUE(rc == 1, "");
+    rc = -1;
+    uint8_t ident_rsp[MODBUS_TCP_MAX_ADU_LENGTH];
+    modbus_get_device_identification(ctx, 0xf8, 0x02, ident_rsp);
+    ASSERT_TRUE(rc == 0, "Pass IDENTIFICATION test");
     // uint8_t raw_req_2[] = {ctx->slave,MODBUS_FC_READ_DEVICE_ID,0x0E, 0x02, 0x04};
     // rsp[MODBUS_TCP_MAX_ADU_LENGTH];
     // rc = modbus_send_raw_request(ctx,raw_req_2, 5 * sizeof(uint8_t));
@@ -147,7 +145,6 @@ int main(int argc, char *argv[])
     /* Single */
     rc = modbus_write_bit(ctx, UT_BITS_ADDRESS, ON);
     printf("1/2 modbus_write_bit: ");
-    ASSERT_TRUE(rc == 1, "");
 
     rc = modbus_read_bits(ctx, UT_BITS_ADDRESS, 1, tab_rp_bits);
     printf("2/2 modbus_read_bits: ");
