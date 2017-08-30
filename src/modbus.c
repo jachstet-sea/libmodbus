@@ -246,6 +246,29 @@ int modbus_send_raw_request(modbus_t *ctx, uint8_t *raw_req, int raw_req_length)
     return send_msg(ctx, req, req_length);
 }
 
+int modbus_get_device_identification(modbus_t *ctx, const uint8_t slave_id, const uint8_t level, uint8_t *raw_rsp) {
+  int rc = 0;
+  const uint8_t defaultObjectId = 0x00; // Default object id
+  int request_length = 5;
+
+  uint8_t raw_req[] = {slave_id,MODBUS_FC_MEI, MODBUS_SFC_READ_DEVICE_IDENT,level,defaultObjectId};
+  rc = modbus_send_raw_request(ctx,raw_req, request_length * sizeof(uint8_t));
+
+  if(rc == -1) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  rc = -1;
+  rc = modbus_receive_raw_confirmation(ctx,raw_rsp);
+  if(rc == -1) {
+    errno = EINVAL;
+    return -1;
+  }
+  return 0;
+}
+
+
 /*
  *  ---------- Request     Indication ----------
  *  | Client | ---------------------->| Server |
@@ -284,7 +307,7 @@ static uint8_t compute_meta_length_after_function(int function,
         case MODBUS_FC_MASK_WRITE_REGISTER:
             length = 6;
             break;
-        case MODBUS_FC_READ_DEVICE_ID:
+        case MODBUS_FC_MEI:
           length = 6;
           break;
         default:
@@ -320,7 +343,7 @@ static int compute_data_length_after_meta(modbus_t *ctx, uint8_t *msg,
             function == MODBUS_FC_REPORT_SLAVE_ID ||
             function == MODBUS_FC_WRITE_AND_READ_REGISTERS) {
             length = msg[ctx->backend->header_length + 1];
-        } else if (function == MODBUS_FC_READ_DEVICE_ID) {
+        } else if (function == MODBUS_FC_MEI) {
             *nb_object_to_read = msg[ctx->backend->header_length +6];
             if(*nb_object_to_read) {
               return 2;
@@ -489,7 +512,7 @@ int _modbus_receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
     fd_set rset;
     struct timeval tv;
     struct timeval *p_tv;
-    int nb_object_to_read = 0 ;
+    int nb_object_to_read = 0;
     int length_to_read;
     int msg_length = 0;
     _step_t step;

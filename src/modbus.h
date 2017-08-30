@@ -76,6 +76,7 @@ MODBUS_BEGIN_DECLS
 #define MODBUS_FC_MASK_WRITE_REGISTER       0x16
 #define MODBUS_FC_WRITE_AND_READ_REGISTERS  0x17
 #define MODBUS_FC_MEI                       0x2B
+#define MODBUS_SFC_READ_DEVICE_IDENT        0x0E
 #define MODBUS_BROADCAST_ADDRESS               0
 
 /* Modbus_Application_Protocol_V1_1b.pdf (chapter 6 section 1 page 12)
@@ -240,6 +241,7 @@ MODBUS_API int modbus_reply(modbus_t *ctx, const uint8_t *req,
                             int req_length, modbus_mapping_t *mb_mapping);
 MODBUS_API int modbus_reply_exception(modbus_t *ctx, const uint8_t *req,
                                       unsigned int exception_code);
+MODBUS_API int modbus_get_device_identification(modbus_t *ctx, const uint8_t slave_id, const uint8_t level, uint8_t *raw_rsp);
 
 /**
  * UTILS FUNCTIONS
