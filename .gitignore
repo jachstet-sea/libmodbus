@@ -49,3 +49,10 @@ doc/*.7
 /libs
 /obj
 *.stackdump
+
+src/ios/config.h
+
+xcuserdata/
+# DS_Store
+.DS_Store
+libmodbus/build
