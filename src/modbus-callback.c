@@ -471,6 +471,7 @@ modbus_t *modbus_new_callback(ssize_t (*callback_send)(modbus_t *ctx, const uint
       return NULL;
     }
     _modbus_init_common(ctx);
+    ctx->s=0;  //workaround for iOS (iOS can not work with -1 initializaton)
     ctx->backend = &_modbus_callback_backend;
     ctx->backend_data = (modbus_callback_t *)malloc(sizeof(modbus_callback_t));
     if (ctx->backend_data == NULL)

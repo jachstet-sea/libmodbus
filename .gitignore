@@ -1,3 +1,4 @@
+*.exe
 *~
 *.swp
 *.o
@@ -47,3 +48,4 @@ doc/*.3
 doc/*.7
 /libs
 /obj
+*.stackdump

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <modbus.h>
+#include "../src/modbus-private.h"
 
 #include "unit-test.h"
 
@@ -126,8 +127,21 @@ int main(int argc, char *argv[])
     tab_rp_registers = (uint16_t *) malloc(nb_points * sizeof(uint16_t));
     memset(tab_rp_registers, 0, nb_points * sizeof(uint16_t));
 
-    printf("\nTEST WRITE/READ:\n");
 
+    printf("\nTEST DEVICE IDENTIFICATION \n");
+
+    ctx->slave = 0xf8;
+    uint8_t raw_req[] = {ctx->slave,MODBUS_FC_READ_DEVICE_ID,0x0E, 0x03, 0x00};
+    uint8_t rsp[MODBUS_TCP_MAX_ADU_LENGTH];
+    rc = modbus_send_raw_request(ctx,raw_req, 5 * sizeof(uint8_t));
+    modbus_receive_confirmation(ctx,rsp);
+    ASSERT_TRUE(rc == 1, "");
+    // uint8_t raw_req_2[] = {ctx->slave,MODBUS_FC_READ_DEVICE_ID,0x0E, 0x02, 0x04};
+    // rsp[MODBUS_TCP_MAX_ADU_LENGTH];
+    // rc = modbus_send_raw_request(ctx,raw_req_2, 5 * sizeof(uint8_t));
+    // modbus_receive_confirmation(ctx,rsp);
+    printf("\nTEST WRITE/READ:\n");
+    goto close;
     /** COIL BITS **/
 
     /* Single */

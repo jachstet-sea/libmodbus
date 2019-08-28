@@ -284,6 +284,9 @@ static uint8_t compute_meta_length_after_function(int function,
         case MODBUS_FC_MASK_WRITE_REGISTER:
             length = 6;
             break;
+        case MODBUS_FC_READ_DEVICE_ID:
+          length = 6;
+          break;
         default:
             length = 1;
         }
@@ -294,7 +297,7 @@ static uint8_t compute_meta_length_after_function(int function,
 
 /* Computes the length to read after the meta information (address, count, etc) */
 static int compute_data_length_after_meta(modbus_t *ctx, uint8_t *msg,
-                                          msg_type_t msg_type)
+                                          msg_type_t msg_type, int *nb_object_to_read)
 {
     int function = msg[ctx->backend->header_length];
     int length;
@@ -317,13 +320,18 @@ static int compute_data_length_after_meta(modbus_t *ctx, uint8_t *msg,
             function == MODBUS_FC_REPORT_SLAVE_ID ||
             function == MODBUS_FC_WRITE_AND_READ_REGISTERS) {
             length = msg[ctx->backend->header_length + 1];
+        } else if (function == MODBUS_FC_READ_DEVICE_ID) {
+            *nb_object_to_read = msg[ctx->backend->header_length +6];
+            if(*nb_object_to_read) {
+              return 2;
+            } else {
+              length = 0;
+          }
         } else {
             length = 0;
-        }
+      }
     }
-
     length += ctx->backend->checksum_length;
-
     return length;
 }
 
@@ -349,6 +357,7 @@ int _modbus_receive_raw_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
     struct timeval *p_tv;
     int length_to_read;
     int msg_length = 0;
+    int nb_object_to_read = 0;
     _step_t step = _STEP_FUNCTION;
 
     if (ctx->debug) {
@@ -480,6 +489,7 @@ int _modbus_receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
     fd_set rset;
     struct timeval tv;
     struct timeval *p_tv;
+    int nb_object_to_read = 0 ;
     int length_to_read;
     int msg_length = 0;
     _step_t step;
@@ -582,13 +592,29 @@ int _modbus_receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
                 } /* else switches straight to the next step */
             case _STEP_META:
                 length_to_read = compute_data_length_after_meta(
-                    ctx, msg, msg_type);
+                    ctx, msg, msg_type, &nb_object_to_read);
                 if ((msg_length + length_to_read) > (int)ctx->backend->max_adu_length) {
                     errno = EMBBADDATA;
                     _error_print(ctx, "too many data");
                     return -1;
                 }
                 step = _STEP_DATA;
+                break;
+            case _STEP_DATA:
+                /* The response can be splitted by server (FIXME) */
+                if (nb_object_to_read) {
+                    length_to_read = msg[msg_length - 1];
+                    if (--nb_object_to_read) {
+                        length_to_read += 2;
+                    } else {
+                        length_to_read += ctx->backend->checksum_length;
+                    }
+                    if ((msg_length + length_to_read) > (int)ctx->backend->max_adu_length) {
+                        errno = EMBBADDATA;
+                        _error_print(ctx, "too many data");
+                        return -1;
+                    }
+                }
                 break;
             default:
                 break;
